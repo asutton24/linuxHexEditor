@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "editor.h"
 typedef unsigned char byte;
 
 byte* openFile(char* file_name, int* len_dest){
@@ -37,9 +38,13 @@ int main(int argc, char** argv){
 	data = openFile(argv[1], &data_len);
 	if (argc > 2){
 		for (int i = 2; i < argc; i++){
-			if(!strcmp(argv[i], "-d")) hexdump(data, data_len);
+			if(!strcmp(argv[i], "-d")){
+				hexdump(data, data_len);
+				free(data);
+				return 0;
+			}
 		}
 	}
-	free(data);
+	run_editor(data, data_len, argv[1]);
 	return 0;
 }
