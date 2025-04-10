@@ -1,6 +1,9 @@
 #include <ncurses.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
+
 typedef unsigned char byte;
 
 typedef struct mem{
@@ -59,15 +62,29 @@ int insert_in_mem(Memory* m, int pos, byte val){
 
 int delete_from_mem(Memory* m, int pos){
 	if (pos < 0 || pos >= m->mem_len) return -1;
-	m->mem_len--;
-	for (int i = pos; i < m->mem_len; i++){
+	for (int i = pos; i < m->mem_len - 1; i++){
 		if (edit_mem(m, i, fetch_mem(m, i + 1)) == -1) return -1;
+	}
+	m->mem_len--;
+	return 0;
+}
+
+int realign(Settings* s, Memory* m){
+	int rows, low, current;
+	getmaxyx(stdscr, rows, low);
+	rows--;
+	low = s->low_byte / s->bytes_per_row;
+	current = s->cur_byte / s->bytes_per_row;
+	if (current - low < 0){
+		s->low_byte -= (low - current) * s->bytes_per_row;
+	} else if (current - low >= rows){
+		s->low_byte += (current - low - rows + 1) * s->bytes_per_row;
 	}
 	return 0;
 }
 
 int printFullScreen(char* header, Settings* s, Memory* m){
-	int rows, cols;
+	int rows, cols, x, y;
 	move(0,0);
 	getmaxyx(stdscr, rows, cols);
 	attron(A_REVERSE);
@@ -76,7 +93,7 @@ int printFullScreen(char* header, Settings* s, Memory* m){
 		printw(" ");
 	}
 	attroff(A_REVERSE);
-	for (int i = s->low_byte; (i < s->bytes_per_row * (cols - 2)) && (i < m->mem_len); i++){
+	for (int i = s->low_byte; (i < s->bytes_per_row * (rows - 1) + s->low_byte) && (i < m->mem_len); i++){
 		if ((i - s->low_byte) % s->bytes_per_row == 0){
 			printw("%.08X: ", i);
 		}
@@ -95,6 +112,10 @@ int printFullScreen(char* header, Settings* s, Memory* m){
 			printw("\n");
 		}
 	}
+	getyx(stdscr, y, x);
+	for (int i = y * cols + x; i < rows * cols; i++){
+		printw(" ");
+	}
 	return 0;
 }
 
@@ -103,7 +124,8 @@ int run_editor(byte* data, int org_len, char* file_name){
 	int input;
 	int insert_val;
 	int cur_val;
-	int rows, cols;
+	int fd;
+	int write_save_msg = 0;
 	Memory* file = (Memory*)malloc(sizeof(Memory));
 	file->main_mem = data;
 	file->main_size = org_len;
@@ -121,6 +143,7 @@ int run_editor(byte* data, int org_len, char* file_name){
 	noecho();
 	scrollok(stdscr, FALSE);
 	curs_set(0);
+	keypad(stdscr, TRUE);
 	printFullScreen(file_name, set, file);
 	while (running){
 		input = getch();
@@ -147,15 +170,46 @@ int run_editor(byte* data, int org_len, char* file_name){
 				if (set->cur_byte == file->mem_len){
 					insert_in_mem(file, set->cur_byte, 0);
 				}
-				getmaxyx(stdscr, rows, cols);
-				if (set->cur_byte / set->bytes_per_row - set->low_byte / set->bytes_per_row >= cols){
-					set->low_byte += set->bytes_per_row;
-				}
 			}
-		} else if (input == 'q'){
+		} else if (input == KEY_RIGHT){
+			if (set->cur_nibble == 'h'){
+				set->cur_nibble = 'l';
+			} else if (set->cur_nibble == 'l' && set->cur_byte + 1 != file->mem_len){
+				set->cur_byte++;
+				set->cur_nibble = 'h';
+			}
+		} else if (input == KEY_LEFT){
+			if (set->cur_nibble == 'l'){
+				set->cur_nibble = 'h';
+			} else if (set->cur_nibble == 'h' && set->cur_byte != 0){
+				set->cur_byte--;
+				set->cur_nibble = 'l';
+			}
+		} else if (input == KEY_DOWN && (set->cur_byte + set->bytes_per_row < file->mem_len)){
+			set->cur_byte += set->bytes_per_row;
+		} else if (input == KEY_UP && (set->cur_byte - set->bytes_per_row >= 0)){
+			set->cur_byte -= set->bytes_per_row;
+		} else if (input == 'i'){
+			insert_in_mem(file, set->cur_byte, 0);
+			set->cur_nibble = 'h';
+		} else if (input == KEY_BACKSPACE){
+			delete_from_mem(file, set->cur_byte);
+			set->cur_nibble = 'h';
+		} else if (input == 19){
+			fd = open(file_name, O_WRONLY | O_CREAT | O_TRUNC, 0774);
+			if (fd < 0) return -1;
+			write(fd, file->main_mem, (file->main_size < file->mem_len) * file->main_size + (file->main_size >= file->mem_len) * file->mem_len);
+			write(fd, file->overflow_mem, (file->mem_len - file->main_size) * (file->mem_len - file->main_size > 0));
+			close(fd);
+			write_save_msg = 1;
+		} else if (input == 17){
 			running = 0;
 		}
-		printFullScreen(file_name, set, file);
+		realign(set, file);
+		if (write_save_msg){
+			printFullScreen("Saved!", set, file);
+			write_save_msg = 0;
+		} else printFullScreen(file_name, set, file);
 	}
 	endwin();
 	free(file->main_mem);
