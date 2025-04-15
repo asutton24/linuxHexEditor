@@ -62,6 +62,10 @@ int insert_in_mem(Memory* m, int pos, byte val){
 
 int delete_from_mem(Memory* m, int pos){
 	if (pos < 0 || pos >= m->mem_len) return -1;
+	if (m->mem_len == 1){
+		edit_mem(m, 0, 0);
+		return 0;
+	}
 	for (int i = pos; i < m->mem_len - 1; i++){
 		if (edit_mem(m, i, fetch_mem(m, i + 1)) == -1) return -1;
 	}
@@ -195,6 +199,7 @@ int run_editor(byte* data, int org_len, char* file_name){
 		} else if (input == KEY_BACKSPACE){
 			delete_from_mem(file, set->cur_byte);
 			set->cur_nibble = 'h';
+			if (set->cur_byte >= file->mem_len) set->cur_byte--;
 		} else if (input == 19){
 			fd = open(file_name, O_WRONLY | O_CREAT | O_TRUNC, 0774);
 			if (fd < 0) return -1;

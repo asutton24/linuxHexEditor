@@ -5,10 +5,19 @@
 typedef unsigned char byte;
 
 byte* openFile(char* file_name, int* len_dest){
-	FILE* file = fopen(file_name, "rb");
+	FILE* file = fopen(file_name, "rb+");
+	byte* buff;
+	int sz;
+	if (file == NULL){
+		//printf("Empty file\n");
+		buff = (byte*)malloc(1);
+		buff[0] = 0;
+		*len_dest = 1;
+		return buff;
+	}
 	fseek(file, 0L, SEEK_END);
-	int sz = ftell(file);
-	byte* buff = (byte*)malloc(sz);
+	sz = ftell(file);
+	buff = (byte*)malloc(sz);
  	rewind(file);
 	fread(buff, 1, sz, file);
 	fclose(file);
@@ -31,6 +40,7 @@ int hexdump(byte* buff, int len){
 
 int main(int argc, char** argv){
 	if (argc == 1){
+		printf("Enter file name\n");
 		return 0;
 	}
 	byte* data;
